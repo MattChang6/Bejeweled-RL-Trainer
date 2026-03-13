@@ -1,4 +1,4 @@
-import os
+﻿import os
 from dataclasses import replace
 from typing import Optional
 
@@ -200,6 +200,37 @@ class OptionsDialog(QDialog):
         self.transition_frames.setValue(cfg.transition_consecutive_frames)
         form.addRow("Transition Frames", self.transition_frames)
 
+        self.score_enabled = QCheckBox("Use score-based reward")
+        self.score_enabled.setChecked(cfg.score_enabled)
+        form.addRow("", self.score_enabled)
+
+        self.score_stable_frames = QSpinBox()
+        self.score_stable_frames.setRange(1, 20)
+        self.score_stable_frames.setValue(cfg.score_stable_frames)
+        form.addRow("Score Stable Frames", self.score_stable_frames)
+
+        self.score_stable_threshold = QDoubleSpinBox()
+        self.score_stable_threshold.setRange(0.0, 20.0)
+        self.score_stable_threshold.setDecimals(2)
+        self.score_stable_threshold.setValue(cfg.score_stable_threshold)
+        form.addRow("Score Stable Threshold", self.score_stable_threshold)
+
+        self.score_reward_scale = QDoubleSpinBox()
+        self.score_reward_scale.setRange(0.0, 1000.0)
+        self.score_reward_scale.setDecimals(2)
+        self.score_reward_scale.setValue(cfg.score_reward_scale)
+        form.addRow("Score Reward Scale", self.score_reward_scale)
+
+        self.score_match_threshold = QDoubleSpinBox()
+        self.score_match_threshold.setRange(0.1, 1.0)
+        self.score_match_threshold.setDecimals(2)
+        self.score_match_threshold.setValue(cfg.score_match_threshold)
+        form.addRow("Score OCR Match Thresh", self.score_match_threshold)
+
+        self.score_debug_print = QCheckBox("Print score to console")
+        self.score_debug_print.setChecked(cfg.score_debug_print)
+        form.addRow("", self.score_debug_print)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -218,6 +249,12 @@ class OptionsDialog(QDialog):
             transition_confidence_threshold=self.transition_confidence.value(),
             transition_motion_threshold=self.transition_motion.value(),
             transition_consecutive_frames=self.transition_frames.value(),
+            score_enabled=self.score_enabled.isChecked(),
+            score_stable_frames=self.score_stable_frames.value(),
+            score_stable_threshold=self.score_stable_threshold.value(),
+            score_reward_scale=self.score_reward_scale.value(),
+            score_match_threshold=self.score_match_threshold.value(),
+            score_debug_print=self.score_debug_print.isChecked(),
         )
         dqn_cfg = replace(
             self.dqn_cfg,
@@ -356,6 +393,7 @@ class WindowCaptureGUI(QMainWindow):
         self.resume_btn = QPushButton("Resume")
         self.options_btn = QPushButton("Options")
         self.calibrate_btn = QPushButton("Recalibrate Board")
+        self.calibrate_score_btn = QPushButton("Calibrate Scoreboard")
         self.save_training_btn = QPushButton("Save Training Data")
         self.load_training_btn = QPushButton("Load Training Data")
 
@@ -366,6 +404,7 @@ class WindowCaptureGUI(QMainWindow):
         self.resume_btn.clicked.connect(self.resume_training)
         self.options_btn.clicked.connect(self.open_options)
         self.calibrate_btn.clicked.connect(self.recalibrate_board)
+        self.calibrate_score_btn.clicked.connect(self.recalibrate_scoreboard)
         self.save_training_btn.clicked.connect(self.save_training_data)
         self.load_training_btn.clicked.connect(self.load_training_data)
 
@@ -378,6 +417,7 @@ class WindowCaptureGUI(QMainWindow):
             self.resume_btn,
             self.options_btn,
             self.calibrate_btn,
+            self.calibrate_score_btn,
             self.save_training_btn,
             self.load_training_btn,
         ]:
@@ -552,6 +592,18 @@ class WindowCaptureGUI(QMainWindow):
             QMessageBox.information(self, "Calibration", "Calibration saved to calibration.json")
         except Exception as exc:
             QMessageBox.critical(self, "Calibration Failed", str(exc))
+
+    def recalibrate_scoreboard(self):
+        window_title = self.window_box.currentText().strip()
+        if not window_title:
+            QMessageBox.warning(self, "Missing Window", "Select a window first.")
+            return
+        try:
+            calibration = BoardVision.run_score_calibration(window_title)
+            BoardVision.save_score_calibration("score_calibration.json", calibration)
+            QMessageBox.information(self, "Score Calibration", "Score calibration saved to score_calibration.json")
+        except Exception as exc:
+            QMessageBox.critical(self, "Score Calibration Failed", str(exc))
 
     def save_training_data(self):
         if not self.worker or not self.worker.isRunning():

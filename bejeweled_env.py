@@ -1,12 +1,14 @@
+﻿import os
 import time
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 import cv2 as cv
 import numpy as np
 import pyautogui
 
-from bejeweled_vision import BoardVision, Calibration
+from bejeweled_vision import BoardVision, Calibration, ScoreCalibration
+from score_ocr import ScoreReader
 
 
 @dataclass
@@ -27,6 +29,20 @@ class TransitionConfig:
     consecutive_frames: int = 4
 
 
+@dataclass
+class ScoreConfig:
+    enabled: bool = True
+    calibration_path: str = "score_calibration.json"
+    templates_dir: str = "score_digits"
+    match_threshold: float = 0.7
+    stable_frames: int = 4
+    stable_threshold: float = 2.0
+    capture_interval: float = 0.1
+    reward_scale: float = 1.0
+    max_wait_seconds: float = 3.0
+    debug_print: bool = False
+
+
 class BejeweledEnv:
     def __init__(
         self,
@@ -38,6 +54,7 @@ class BejeweledEnv:
         settle_delay: float = 0.6,
         reward_cfg: RewardConfig = RewardConfig(),
         transition_cfg: TransitionConfig = TransitionConfig(),
+        score_cfg: ScoreConfig = ScoreConfig(),
     ):
         self.window_title = window_title
         self.calibration_path = calibration_path
@@ -45,6 +62,7 @@ class BejeweledEnv:
         self.settle_delay = settle_delay
         self.reward_cfg = reward_cfg
         self.transition_cfg = transition_cfg
+        self.score_cfg = score_cfg
 
         calibration = BoardVision.load_calibration(calibration_path)
         if calibration is None:
@@ -63,6 +81,12 @@ class BejeweledEnv:
         self.transition_streak = 0
         self.transition_until = 0.0
 
+        self.score_calibration: Optional[ScoreCalibration] = None
+        self.score_reader: Optional[ScoreReader] = None
+        self.last_score: Optional[int] = None
+        if self.score_cfg.enabled:
+            self._init_score_reader()
+
         self.action_count = calibration.grid_size * calibration.grid_size * 4
         self.grid_size = calibration.grid_size
         self.colors = calibration.colors
@@ -73,6 +97,7 @@ class BejeweledEnv:
         self.prev_gray = None
         self.transition_streak = 0
         self.transition_until = 0.0
+        self.last_score = self._wait_stable_score() if self.score_cfg.enabled else None
         return self._obs_from_board(self.last_board)
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
@@ -94,6 +119,8 @@ class BejeweledEnv:
         r1, c1, r2, c2 = self._decode_action(action)
         if not self._valid_swap(r1, c1, r2, c2):
             obs = self._obs_from_board(self.last_board)
+            if self.score_cfg.enabled:
+                return obs, -self.reward_cfg.invalid_penalty, False, {"invalid": True, "score_based": True}
             return obs, -self.reward_cfg.invalid_penalty, False, {"invalid": True}
 
         self._perform_swap(r1, c1, r2, c2)
@@ -108,10 +135,74 @@ class BejeweledEnv:
             obs = self._obs_from_board(new_board)
             return obs, 0.0, False, {"transition": True, "skip_replay": True, "transition_triggered": True}
 
-        reward, info = self._compute_reward(self.last_board, new_board)
         self.last_board = new_board
         obs = self._obs_from_board(new_board)
+
+        if self.score_cfg.enabled:
+            score = self._wait_stable_score()
+            if score is None:
+                if self.last_score is not None:
+                    reward = -self.reward_cfg.step_penalty
+                    return obs, reward, False, {
+                        "score": self.last_score,
+                        "score_diff": 0,
+                        "score_based": True,
+                        "score_fallback": True,
+                    }
+                return obs, -self.reward_cfg.step_penalty, False, {"score_unavailable": True, "score_based": True}
+            if self.last_score is None:
+                diff = 0
+            else:
+                diff = max(0, score - self.last_score)
+            self.last_score = score
+            reward = diff * self.score_cfg.reward_scale - self.reward_cfg.step_penalty
+            return obs, reward, False, {"score": score, "score_diff": diff, "score_based": True}
+
+        reward, info = self._compute_reward(self.last_board, new_board)
         return obs, reward, False, info
+
+    def _init_score_reader(self) -> None:
+        self.score_calibration = BoardVision.load_score_calibration(self.score_cfg.calibration_path)
+        if self.score_calibration is None:
+            raise ValueError(
+                f"Score calibration missing. Use score calibration to create {self.score_cfg.calibration_path}."
+            )
+        if not os.path.isdir(self.score_cfg.templates_dir):
+            raise ValueError(f"Score template folder missing: {self.score_cfg.templates_dir}")
+        self.score_reader = ScoreReader(self.score_cfg.templates_dir, self.score_cfg.match_threshold)
+
+    def _wait_stable_score(self) -> Optional[int]:
+        if not self.score_calibration or not self.score_reader:
+            return None
+        stable = 0
+        last_gray = None
+        last_score = None
+        start = time.time()
+        while stable < self.score_cfg.stable_frames:
+            img = self.vision.capture_score(self.score_calibration)
+            gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+            if last_gray is not None:
+                diff = float(np.mean(cv.absdiff(gray, last_gray)))
+                if diff <= self.score_cfg.stable_threshold:
+                    stable += 1
+                else:
+                    stable = 0
+            last_gray = gray
+
+            score = self.score_reader.read(img)
+            if score is not None:
+                last_score = score
+                if self.score_cfg.debug_print:
+                    print(f"[score] {score}")
+
+            if time.time() - start > self.score_cfg.max_wait_seconds:
+                break
+            time.sleep(self.score_cfg.capture_interval)
+
+        if last_score is None and self.score_cfg.debug_print:
+            print("[score] unavailable")
+
+        return last_score
 
     def _transition_active(self) -> bool:
         return self.transition_cfg.enabled and time.time() < self.transition_until
@@ -119,6 +210,15 @@ class BejeweledEnv:
     def _transition_detected(self) -> bool:
         if not self.transition_cfg.enabled:
             return False
+
+        if self.score_cfg.enabled and self.score_calibration and self.score_reader:
+            img = self.vision.capture_score(self.score_calibration)
+            score = self.score_reader.read(img)
+            if score is None:
+                self.transition_streak += 1
+            else:
+                self.transition_streak = 0
+            return self.transition_streak >= self.transition_cfg.consecutive_frames
 
         board_img = self.vision.capture_board()
         gray = cv.cvtColor(board_img, cv.COLOR_BGR2GRAY)

@@ -1,4 +1,4 @@
-import ctypes
+﻿import ctypes
 import os
 import threading
 import time
@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from bejeweled_env import BejeweledEnv, RewardConfig, TransitionConfig
+from bejeweled_env import BejeweledEnv, RewardConfig, TransitionConfig, ScoreConfig
 from dqn import DQN, DQNConfig, ReplayBuffer
 
 
@@ -36,6 +36,16 @@ class TrainingConfig:
     transition_confidence_threshold: float = 0.58
     transition_motion_threshold: float = 0.11
     transition_consecutive_frames: int = 4
+    score_enabled: bool = True
+    score_calibration_path: str = "score_calibration.json"
+    score_templates_dir: str = "score_digits"
+    score_match_threshold: float = 0.7
+    score_stable_frames: int = 4
+    score_stable_threshold: float = 2.0
+    score_capture_interval: float = 0.1
+    score_reward_scale: float = 1.0
+    score_max_wait_seconds: float = 3.0
+    score_debug_print: bool = False
 
 
 class TrainingControl:
@@ -183,6 +193,18 @@ def train_session(
             motion_threshold=cfg.transition_motion_threshold,
             consecutive_frames=cfg.transition_consecutive_frames,
         ),
+        score_cfg=ScoreConfig(
+            enabled=cfg.score_enabled,
+            calibration_path=cfg.score_calibration_path,
+            templates_dir=cfg.score_templates_dir,
+            match_threshold=cfg.score_match_threshold,
+            stable_frames=cfg.score_stable_frames,
+            stable_threshold=cfg.score_stable_threshold,
+            capture_interval=cfg.score_capture_interval,
+            reward_scale=cfg.score_reward_scale,
+            max_wait_seconds=cfg.score_max_wait_seconds,
+            debug_print=cfg.score_debug_print,
+        ),
     )
     obs = env.reset()
 
@@ -221,7 +243,11 @@ def train_session(
         state = env.reset()
         ep_reward = 0.0
         ep_loss = 0.0
-        for step in range(1, cfg.max_steps + 1):
+        step = 0
+        attempts = 0
+        max_attempts = cfg.max_steps * 10
+        while step < cfg.max_steps and attempts < max_attempts:
+            attempts += 1
             if control:
                 control.wait_if_paused()
                 if control.stopped():
@@ -244,6 +270,7 @@ def train_session(
             state = next_state
             skip_replay = bool(info.get("skip_replay", False))
             if not skip_replay:
+                step += 1
                 replay.push(prev_state, action, reward, next_state, done)
                 ep_reward += reward
                 total_steps += 1
@@ -278,6 +305,7 @@ def train_session(
                         "match_count": float(info.get("match_count", 0)),
                         "invalid": float(1 if info.get("invalid") else 0),
                         "transition": float(1 if info.get("transition") else 0),
+                        "score_diff": float(info.get("score_diff", 0)),
                     }
                 )
 
@@ -348,6 +376,18 @@ def play_session(
             motion_threshold=cfg.transition_motion_threshold,
             consecutive_frames=cfg.transition_consecutive_frames,
         ),
+        score_cfg=ScoreConfig(
+            enabled=cfg.score_enabled,
+            calibration_path=cfg.score_calibration_path,
+            templates_dir=cfg.score_templates_dir,
+            match_threshold=cfg.score_match_threshold,
+            stable_frames=cfg.score_stable_frames,
+            stable_threshold=cfg.score_stable_threshold,
+            capture_interval=cfg.score_capture_interval,
+            reward_scale=cfg.score_reward_scale,
+            max_wait_seconds=cfg.score_max_wait_seconds,
+            debug_print=cfg.score_debug_print,
+        ),
     )
     obs = env.reset()
     q_net = DQN(obs.shape, env.action_count).to(cfg.device)
@@ -370,7 +410,11 @@ def play_session(
             break
         state = env.reset()
         ep_reward = 0.0
-        for step in range(1, cfg.max_steps + 1):
+        step = 0
+        attempts = 0
+        max_attempts = cfg.max_steps * 10
+        while step < cfg.max_steps and attempts < max_attempts:
+            attempts += 1
             if control:
                 control.wait_if_paused()
                 if control.stopped():
@@ -392,6 +436,7 @@ def play_session(
             state = next_state
 
             if not info.get("skip_replay", False):
+                step += 1
                 ep_reward += reward
                 total_steps += 1
             else:
@@ -410,6 +455,7 @@ def play_session(
                         "match_count": float(info.get("match_count", 0)),
                         "invalid": float(1 if info.get("invalid") else 0),
                         "transition": float(1 if info.get("transition") else 0),
+                        "score_diff": float(info.get("score_diff", 0)),
                     }
                 )
 

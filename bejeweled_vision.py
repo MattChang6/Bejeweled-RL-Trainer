@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import time
 from dataclasses import dataclass
@@ -35,6 +35,22 @@ class Calibration:
     @property
     def cell_h(self) -> int:
         return int(self.board_height / self.grid_size)
+
+
+@dataclass
+class ScoreCalibration:
+    score_left: int
+    score_top: int
+    score_right: int
+    score_bottom: int
+
+    @property
+    def width(self) -> int:
+        return self.score_right - self.score_left
+
+    @property
+    def height(self) -> int:
+        return self.score_bottom - self.score_top
 
 
 class BoardVision:
@@ -78,6 +94,20 @@ class BoardVision:
             json.dump(calibration.__dict__, f, indent=2)
 
     @staticmethod
+    def load_score_calibration(path: str) -> Optional[ScoreCalibration]:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return ScoreCalibration(**data)
+        except FileNotFoundError:
+            return None
+
+    @staticmethod
+    def save_score_calibration(path: str, calibration: ScoreCalibration) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(calibration.__dict__, f, indent=2)
+
+    @staticmethod
     def run_calibration(window_title: str) -> Calibration:
         wincap = WindowCapture(window_title)
         print("Calibration: move mouse to TOP-LEFT of the board, then press Enter.")
@@ -102,11 +132,41 @@ class BoardVision:
             board_bottom=bottom,
         )
 
+    @staticmethod
+    def run_score_calibration(window_title: str) -> ScoreCalibration:
+        wincap = WindowCapture(window_title)
+        print("Score calibration: move mouse to TOP-LEFT of the score area, then press Enter.")
+        input()
+        tl = pyautogui.position()
+        print("Score calibration: move mouse to BOTTOM-RIGHT of the score area, then press Enter.")
+        input()
+        br = pyautogui.position()
+
+        left = int(tl.x - wincap.offset_x)
+        top = int(tl.y - wincap.offset_y)
+        right = int(br.x - wincap.offset_x)
+        bottom = int(br.y - wincap.offset_y)
+
+        if right <= left or bottom <= top:
+            raise ValueError("Invalid score calibration rectangle. Try again.")
+
+        return ScoreCalibration(
+            score_left=left,
+            score_top=top,
+            score_right=right,
+            score_bottom=bottom,
+        )
+
     def capture_board(self) -> np.ndarray:
         screenshot = self.wincap.get_screenshot()
         c = self.calibration
         board_img = screenshot[c.board_top:c.board_bottom, c.board_left:c.board_right]
         return board_img
+
+    def capture_score(self, score_calibration: ScoreCalibration) -> np.ndarray:
+        screenshot = self.wincap.get_screenshot()
+        s = score_calibration
+        return screenshot[s.score_top:s.score_bottom, s.score_left:s.score_right]
 
     def cell_images(self, board_img: np.ndarray) -> List[np.ndarray]:
         c = self.calibration
