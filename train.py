@@ -1,5 +1,6 @@
 ﻿import ctypes
 import os
+import sys
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -10,6 +11,7 @@ import numpy as np
 import torch
 from torch import nn
 
+sys.path.insert(0, "./vision")
 from bejeweled_env import BejeweledEnv, RewardConfig, TransitionConfig, ScoreConfig
 from dqn import DQN, DQNConfig, ReplayBuffer
 
