@@ -46,7 +46,7 @@ class TrainingConfig:
     score_stable_threshold: float = 2.0
     score_capture_interval: float = 0.1
     score_reward_scale: float = 1.0
-    score_max_wait_seconds: float = 3.0
+    score_max_wait_seconds: float = 10.0
     score_debug_print: bool = False
 
 
@@ -142,6 +142,15 @@ def load_checkpoint(checkpoint_path: str, device: str = "cpu") -> dict:
     return torch.load(checkpoint_path, map_location=device)
 
 
+def load_model_weights(model_path: str, device: str = "cpu") -> dict:
+    payload = torch.load(model_path, map_location=device)
+    if isinstance(payload, dict) and "model_state_dict" in payload:
+        return payload["model_state_dict"]
+    if isinstance(payload, dict):
+        return payload
+    raise ValueError(f"Unsupported model file format: {model_path}")
+
+
 def train_agent(
     window_title: str,
     episodes: int,
@@ -182,6 +191,7 @@ def train_session(
     progress_cb: Optional[ProgressCallback] = None,
     checkpoint_in: Optional[str] = None,
     save_checkpoint_path: Optional[str] = None,
+    initial_model_in: Optional[str] = None,
 ) -> dict:
     env = BejeweledEnv(
         window_title=cfg.window_title,
@@ -196,7 +206,7 @@ def train_session(
             consecutive_frames=cfg.transition_consecutive_frames,
         ),
         score_cfg=ScoreConfig(
-            enabled=cfg.score_enabled,
+            enabled=True,
             calibration_path=cfg.score_calibration_path,
             templates_dir=cfg.score_templates_dir,
             match_threshold=cfg.score_match_threshold,
@@ -234,6 +244,10 @@ def train_session(
         epsilon = float(checkpoint.get("epsilon", epsilon))
         total_steps = int(checkpoint.get("total_steps", total_steps))
         reward_history = list(checkpoint.get("reward_history", reward_history))
+    elif initial_model_in:
+        state_dict = load_model_weights(initial_model_in, cfg.device)
+        q_net.load_state_dict(state_dict)
+        target_net.load_state_dict(q_net.state_dict())
 
     get_async_key_state = None
     if cfg.poll_hotkeys:
@@ -379,7 +393,7 @@ def play_session(
             consecutive_frames=cfg.transition_consecutive_frames,
         ),
         score_cfg=ScoreConfig(
-            enabled=cfg.score_enabled,
+            enabled=True,
             calibration_path=cfg.score_calibration_path,
             templates_dir=cfg.score_templates_dir,
             match_threshold=cfg.score_match_threshold,

@@ -1,5 +1,8 @@
-import argparse
+﻿import argparse
+import os
 import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "vision"))
 
 from train import train_agent
 from PyQt6.QtWidgets import QApplication
@@ -50,7 +53,3 @@ if __name__ == "__main__":
         )
     else:
         sys.exit(run_gui())
-
-# capture cells: python collect_gem_dataset.py --window "Bejeweled 3" --frames 1 --interval 1 --preview
-# label cells: python label_gem_dataset.py --source dataset/unlabeled --dest dataset/labeled --classes 7
-# train classifier: python train_gem_classifier.py --dataset dataset/labeled --out models/gem_classifier.pt --epochs 20 --batch-size 64
