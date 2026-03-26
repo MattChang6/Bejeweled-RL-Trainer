@@ -75,12 +75,30 @@ class TrainingControl:
             time.sleep(0.05)
 
 
-def select_action(q_net: DQN, state: np.ndarray, epsilon: float, n_actions: int, device: str) -> int:
+def select_action(
+    q_net: DQN,
+    state: np.ndarray,
+    epsilon: float,
+    n_actions: int,
+    device: str,
+    valid_actions: Optional[np.ndarray] = None,
+) -> int:
+    if valid_actions is not None and len(valid_actions) == 0:
+        raise ValueError("valid_actions is empty")
+
     if np.random.rand() < epsilon:
+        if valid_actions is not None:
+            return int(np.random.choice(valid_actions))
         return np.random.randint(0, n_actions)
+
     with torch.no_grad():
         state_t = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
         q_values = q_net(state_t)
+        if valid_actions is not None:
+            mask = torch.full_like(q_values, float("-inf"))
+            valid_idx = torch.as_tensor(valid_actions, dtype=torch.long, device=device)
+            mask[:, valid_idx] = q_values[:, valid_idx]
+            q_values = mask
         return int(torch.argmax(q_values, dim=1).item())
 
 
@@ -280,7 +298,14 @@ def train_session(
                     control.request_pause()
                 time.sleep(0.2)
 
-            action = select_action(q_net, state, epsilon, env.action_count, cfg.device)
+            action = select_action(
+                q_net,
+                state,
+                epsilon,
+                env.action_count,
+                cfg.device,
+                valid_actions=env.valid_actions,
+            )
             prev_state = state
             next_state, reward, done, info = env.step(action)
             state = next_state
@@ -447,7 +472,14 @@ def play_session(
                     control.request_pause()
                 time.sleep(0.2)
 
-            action = select_action(q_net, state, epsilon=0.0, n_actions=env.action_count, device=cfg.device)
+            action = select_action(
+                q_net,
+                state,
+                epsilon=0.0,
+                n_actions=env.action_count,
+                device=cfg.device,
+                valid_actions=env.valid_actions,
+            )
             next_state, reward, done, info = env.step(action)
             state = next_state
 

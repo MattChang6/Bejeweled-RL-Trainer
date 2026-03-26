@@ -75,6 +75,7 @@ class BoardVision:
         self.prev_labels: Optional[np.ndarray] = None
         self.prev_confidence: Optional[np.ndarray] = None
         self.last_confidence_map: Optional[np.ndarray] = None
+        self.num_classes = calibration.colors
 
         if self.classifier_path and os.path.exists(self.classifier_path):
             self._load_classifier(self.classifier_path, self.classifier_device)
@@ -236,6 +237,8 @@ class BoardVision:
         from gem_classifier import load_gem_classifier
 
         self.classifier_bundle = load_gem_classifier(classifier_path, device=device)
+        self.num_classes = max(self.num_classes, len(self.classifier_bundle.class_names))
+        self.calibration.colors = max(self.calibration.colors, self.num_classes)
 
     def _board_state_classifier(self, board_img: np.ndarray) -> np.ndarray:
         from gem_classifier import infer_cells

@@ -89,7 +89,11 @@ class BejeweledEnv:
 
         self.action_count = calibration.grid_size * calibration.grid_size * 4
         self.grid_size = calibration.grid_size
-        self.colors = calibration.colors
+        self.colors = max(calibration.colors, getattr(self.vision, "num_classes", calibration.colors))
+        self.valid_actions = np.array(
+            [action for action in range(self.action_count) if self._valid_action_index(action)],
+            dtype=np.int64,
+        )
 
     def reset(self) -> np.ndarray:
         self.last_board = self.vision.board_state(reinit=True)
@@ -120,7 +124,7 @@ class BejeweledEnv:
         if not self._valid_swap(r1, c1, r2, c2):
             obs = self._obs_from_board(self.last_board)
             if self.score_cfg.enabled:
-                return obs, -self.reward_cfg.invalid_penalty, False, {"invalid": True, "score_based": True}
+                return obs, -self.reward_cfg.invalid_penalty, False, {"invalid_action": True, "score_based": True}
             return obs, -self.reward_cfg.invalid_penalty, False, {"invalid": True}
 
         self._perform_swap(r1, c1, r2, c2)
@@ -140,23 +144,65 @@ class BejeweledEnv:
 
         if self.score_cfg.enabled:
             score = self._wait_stable_score()
+            score_retry = False
+            score_regression_filtered = False
+            if score is not None and self.last_score is not None and score < self.last_score:
+                score_retry = True
+                retry_score = self._wait_stable_score()
+                if retry_score is not None:
+                    score = retry_score
+                if score is None or score < self.last_score:
+                    score = None
+                    score_regression_filtered = True
+
             if score is None:
                 if self.last_score is not None:
                     reward = -self.reward_cfg.step_penalty
-                    return obs, reward, False, {
+                    info = {
                         "score": self.last_score,
                         "score_diff": 0,
                         "score_based": True,
                         "score_fallback": True,
                     }
+                    if score_retry:
+                        info["score_retry"] = True
+                    if score_regression_filtered:
+                        info["score_regression_filtered"] = True
+                    return obs, reward, False, info
                 return obs, -self.reward_cfg.step_penalty, False, {"score_unavailable": True, "score_based": True}
+
             if self.last_score is None:
-                diff = 0
-            else:
-                diff = max(0, score - self.last_score)
+                self.last_score = score
+                info = {
+                    "score": score,
+                    "score_diff": 0,
+                    "score_based": True,
+                    "score_baseline_reset": True,
+                }
+                if score_retry:
+                    info["score_retry"] = True
+                return obs, -self.reward_cfg.step_penalty, False, info
+
+            diff = max(0, score - self.last_score)
             self.last_score = score
+            if diff == 0:
+                reward = -(self.reward_cfg.invalid_penalty + self.reward_cfg.step_penalty)
+                info = {
+                    "score": score,
+                    "score_diff": 0,
+                    "score_based": True,
+                    "invalid": True,
+                    "invalid_reason": "no_score_change",
+                }
+                if score_retry:
+                    info["score_retry"] = True
+                return obs, reward, False, info
+
             reward = diff * self.score_cfg.reward_scale - self.reward_cfg.step_penalty
-            return obs, reward, False, {"score": score, "score_diff": diff, "score_based": True}
+            info = {"score": score, "score_diff": diff, "score_based": True}
+            if score_retry:
+                info["score_retry"] = True
+            return obs, reward, False, info
 
         reward, info = self._compute_reward(self.last_board, new_board)
         return obs, reward, False, info
@@ -308,7 +354,8 @@ class BejeweledEnv:
         return matches
 
     def _obs_from_board(self, board: np.ndarray) -> np.ndarray:
-        one_hot = np.eye(self.colors, dtype=np.float32)[board]
+        num_colors = max(self.colors, int(np.max(board)) + 1 if board.size else self.colors)
+        one_hot = np.eye(num_colors, dtype=np.float32)[board]
         return np.transpose(one_hot, (2, 0, 1))
 
     def debug_frame(self) -> np.ndarray:
@@ -318,6 +365,8 @@ class BejeweledEnv:
 
     def _decode_action(self, action: int) -> Tuple[int, int, int, int]:
         n = self.grid_size
+        if action < 0 or action >= self.action_count:
+            raise IndexError(f"Action {action} out of range for action_count={self.action_count}")
         cell = action // 4
         direction = action % 4
         r = cell // n
@@ -336,3 +385,7 @@ class BejeweledEnv:
         if r2 < 0 or r2 >= n or c2 < 0 or c2 >= n:
             return False
         return abs(r1 - r2) + abs(c1 - c2) == 1
+
+    def _valid_action_index(self, action: int) -> bool:
+        r1, c1, r2, c2 = self._decode_action(action)
+        return self._valid_swap(r1, c1, r2, c2)

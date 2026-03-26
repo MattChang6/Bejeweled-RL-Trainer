@@ -150,7 +150,7 @@ class OptionsDialog(QDialog):
         self.invalid_penalty = QDoubleSpinBox()
         self.invalid_penalty.setRange(0.0, 100.0)
         self.invalid_penalty.setValue(reward_cfg.invalid_penalty)
-        self.invalid_penalty.setToolTip("Penalty applied when the selected swap is not a valid move.")
+        self.invalid_penalty.setToolTip("Penalty applied when a legal swap does not increase the score. Border moves are already masked out automatically.")
         form.addRow("Invalid Penalty", self.invalid_penalty)
 
         self.step_penalty = QDoubleSpinBox()

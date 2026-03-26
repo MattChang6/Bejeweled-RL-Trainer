@@ -1,14 +1,14 @@
 {
   "training_config": {
     "window_title": "Bejeweled 3",
-    "episodes": 2,
-    "max_steps": 10,
-    "model_out": "models/bejeweled_dqn.pt",
+    "episodes": 100,
+    "max_steps": 200,
+    "model_out": "models/bejeweled_dqn_part2.pt",
     "device": "cpu",
     "reward_log_path": "training_rewards.csv",
     "plot_path": "training_rewards.png",
     "log_steps": true,
-    "debug_view": false,
+    "debug_view": true,
     "poll_hotkeys": true,
     "classifier_path": "models/gem_classifier.pt",
     "classifier_device": "cpu",
@@ -21,7 +21,7 @@
     "score_calibration_path": "score_calibration.json",
     "score_templates_dir": "score_digits",
     "score_match_threshold": 0.7,
-    "score_stable_frames": 4,
+    "score_stable_frames": 6,
     "score_stable_threshold": 2.0,
     "score_capture_interval": 0.1,
     "score_reward_scale": 0.02,
@@ -38,15 +38,15 @@
   },
   "reward_config": {
     "match_reward": 1.0,
-    "invalid_penalty": 1.0,
-    "step_penalty": 0.01,
+    "invalid_penalty": 0.5,
+    "step_penalty": 0.0,
     "speed_target_sec": 1.5,
     "speed_bonus_max": 0.5
   },
   "paths": {
-    "model_out": "models/bejeweled_dqn.pt",
-    "checkpoint_out": "models/bejeweled_checkpoint.pt",
+    "model_out": "models/bejeweled_dqn_part2.pt",
+    "checkpoint_out": "models/bejeweled_dqn_part2_checkpoint.pt",
     "classifier_path": "models/gem_classifier.pt",
-    "warm_start_model": ""
+    "warm_start_model": "C:/Users/Matt/Desktop/USV Files/USV 2026 Spring/IND401/Bejeweled-RL-Trainer/models/bejeweled_dqn100_200.pt"
   }
 }
