@@ -3,12 +3,12 @@
     "window_title": "Bejeweled 3",
     "episodes": 100,
     "max_steps": 200,
-    "model_out": "models/bejeweled_dqn_part2.pt",
+    "model_out": "models/bejeweled_dqn_part3.pt",
     "device": "cpu",
     "reward_log_path": "training_rewards.csv",
     "plot_path": "training_rewards.png",
     "log_steps": true,
-    "debug_view": true,
+    "debug_view": false,
     "poll_hotkeys": true,
     "classifier_path": "models/gem_classifier.pt",
     "classifier_device": "cpu",
@@ -44,9 +44,9 @@
     "speed_bonus_max": 0.5
   },
   "paths": {
-    "model_out": "models/bejeweled_dqn_part2.pt",
-    "checkpoint_out": "models/bejeweled_dqn_part2_checkpoint.pt",
+    "model_out": "models/bejeweled_dqn_part3.pt",
+    "checkpoint_out": "C:/Users/Matt/Desktop/USV Files/USV 2026 Spring/IND401/Bejeweled-RL-Trainer/models/bejeweled_dqn_part3_checkpoint.pt",
     "classifier_path": "models/gem_classifier.pt",
-    "warm_start_model": "C:/Users/Matt/Desktop/USV Files/USV 2026 Spring/IND401/Bejeweled-RL-Trainer/models/bejeweled_dqn100_200.pt"
+    "warm_start_model": ""
   }
 }
