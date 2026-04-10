@@ -224,7 +224,7 @@ def train_session(
             consecutive_frames=cfg.transition_consecutive_frames,
         ),
         score_cfg=ScoreConfig(
-            enabled=True,
+            enabled=cfg.score_enabled,
             calibration_path=cfg.score_calibration_path,
             templates_dir=cfg.score_templates_dir,
             match_threshold=cfg.score_match_threshold,
@@ -304,7 +304,7 @@ def train_session(
                 epsilon,
                 env.action_count,
                 cfg.device,
-                valid_actions=env.valid_actions,
+                valid_actions=env.current_candidate_actions(),
             )
             prev_state = state
             next_state, reward, done, info = env.step(action)
@@ -418,7 +418,7 @@ def play_session(
             consecutive_frames=cfg.transition_consecutive_frames,
         ),
         score_cfg=ScoreConfig(
-            enabled=True,
+            enabled=cfg.score_enabled,
             calibration_path=cfg.score_calibration_path,
             templates_dir=cfg.score_templates_dir,
             match_threshold=cfg.score_match_threshold,
@@ -478,7 +478,7 @@ def play_session(
                 epsilon=0.0,
                 n_actions=env.action_count,
                 device=cfg.device,
-                valid_actions=env.valid_actions,
+                valid_actions=env.current_candidate_actions(),
             )
             next_state, reward, done, info = env.step(action)
             state = next_state

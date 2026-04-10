@@ -90,6 +90,7 @@ class BejeweledEnv:
         self.action_count = calibration.grid_size * calibration.grid_size * 4
         self.grid_size = calibration.grid_size
         self.colors = max(calibration.colors, getattr(self.vision, "num_classes", calibration.colors))
+        self.hypercube_label = self.colors - 1 if self.colors >= 8 else None
         self.valid_actions = np.array(
             [action for action in range(self.action_count) if self._valid_action_index(action)],
             dtype=np.int64,
@@ -120,6 +121,7 @@ class BejeweledEnv:
             obs = self._obs_from_board(board)
             return obs, 0.0, False, {"transition": True, "skip_replay": True, "transition_triggered": True}
 
+        prev_board = None if self.last_board is None else self.last_board.copy()
         r1, c1, r2, c2 = self._decode_action(action)
         if not self._valid_swap(r1, c1, r2, c2):
             obs = self._obs_from_board(self.last_board)
@@ -141,6 +143,7 @@ class BejeweledEnv:
 
         self.last_board = new_board
         obs = self._obs_from_board(new_board)
+        board_changed = prev_board is not None and not np.array_equal(prev_board, new_board)
 
         if self.score_cfg.enabled:
             score = self._wait_stable_score()
@@ -164,6 +167,8 @@ class BejeweledEnv:
                         "score_based": True,
                         "score_fallback": True,
                     }
+                    if board_changed:
+                        info["board_changed"] = True
                     if score_retry:
                         info["score_retry"] = True
                     if score_regression_filtered:
@@ -186,6 +191,17 @@ class BejeweledEnv:
             diff = max(0, score - self.last_score)
             self.last_score = score
             if diff == 0:
+                if board_changed:
+                    info = {
+                        "score": score,
+                        "score_diff": 0,
+                        "score_based": True,
+                        "board_changed": True,
+                        "score_zero_but_board_changed": True,
+                    }
+                    if score_retry:
+                        info["score_retry"] = True
+                    return obs, -self.reward_cfg.step_penalty, False, info
                 reward = -(self.reward_cfg.invalid_penalty + self.reward_cfg.step_penalty)
                 info = {
                     "score": score,
@@ -204,7 +220,7 @@ class BejeweledEnv:
                 info["score_retry"] = True
             return obs, reward, False, info
 
-        reward, info = self._compute_reward(self.last_board, new_board)
+        reward, info = self._compute_reward(prev_board, new_board)
         return obs, reward, False, info
 
     def _init_score_reader(self) -> None:
@@ -352,6 +368,76 @@ class BejeweledEnv:
                     matches.add((k, c))
 
         return matches
+
+    def _candidate_actions_for_board(self, board: np.ndarray) -> np.ndarray:
+        candidates = [action for action in self.valid_actions if self._action_can_score(board, action)]
+        return np.array(candidates, dtype=np.int64)
+
+    def _consensus_candidate_board(self, samples: int = 3, frame_delay: float = 0.03) -> Optional[np.ndarray]:
+        boards = []
+        confidences = []
+
+        for i in range(samples):
+            board = self.vision.board_state(reinit=(i == 0))
+            boards.append(board.copy())
+
+            conf_map = self.vision.last_confidence_map
+            if conf_map is None or conf_map.shape != board.shape:
+                confidences.append(np.ones(board.shape, dtype=np.float32))
+            else:
+                confidences.append(np.clip(conf_map.astype(np.float32), 1e-3, None))
+
+            if i + 1 < samples:
+                time.sleep(frame_delay)
+
+        if not boards:
+            return None
+
+        num_labels = max(self.colors, max(int(np.max(board)) for board in boards) + 1)
+        votes = np.zeros((self.grid_size, self.grid_size, num_labels), dtype=np.float32)
+        for board, conf in zip(boards, confidences):
+            for label in np.unique(board):
+                label_idx = int(label)
+                votes[:, :, label_idx] += conf * (board == label_idx)
+
+        return np.argmax(votes, axis=2).astype(np.int32)
+
+    def current_candidate_actions(self) -> np.ndarray:
+        board = self.last_board
+        if board is None:
+            return self.valid_actions
+
+        candidates = self._candidate_actions_for_board(board)
+        if len(candidates) > 4:
+            return candidates
+
+        consensus_board = self._consensus_candidate_board()
+        if consensus_board is not None:
+            consensus_candidates = self._candidate_actions_for_board(consensus_board)
+            if 0 < len(consensus_candidates) <= 8:
+                return consensus_candidates
+
+        if len(candidates) > 0:
+            return candidates
+        return self.valid_actions
+
+    def _action_can_score(self, board: np.ndarray, action: int) -> bool:
+        r1, c1, r2, c2 = self._decode_action(action)
+        if not self._valid_swap(r1, c1, r2, c2):
+            return False
+
+        gem1 = int(board[r1, c1])
+        gem2 = int(board[r2, c2])
+        if self.hypercube_label is not None:
+            if gem1 == self.hypercube_label or gem2 == self.hypercube_label:
+                return True
+        if gem1 == gem2:
+            return False
+
+        swapped = board.copy()
+        swapped[r1, c1], swapped[r2, c2] = swapped[r2, c2], swapped[r1, c1]
+        matches = self._find_matches(swapped)
+        return (r1, c1) in matches or (r2, c2) in matches
 
     def _obs_from_board(self, board: np.ndarray) -> np.ndarray:
         num_colors = max(self.colors, int(np.max(board)) + 1 if board.size else self.colors)
