@@ -48,6 +48,9 @@ class TrainingConfig:
     score_reward_scale: float = 1.0
     score_max_wait_seconds: float = 10.0
     score_debug_print: bool = False
+    play_swap_delay: float = 0.03
+    play_settle_delay: float = 0.12
+    play_rescan_candidates: bool = False
 
 
 class TrainingControl:
@@ -410,6 +413,9 @@ def play_session(
         reward_cfg=reward_cfg,
         classifier_path=cfg.classifier_path,
         classifier_device=cfg.classifier_device,
+        swap_delay=cfg.play_swap_delay,
+        settle_delay=cfg.play_settle_delay,
+        candidate_rescan_enabled=cfg.play_rescan_candidates,
         transition_cfg=TransitionConfig(
             enabled=cfg.transition_enabled,
             pause_seconds=cfg.transition_pause_seconds,
@@ -418,7 +424,7 @@ def play_session(
             consecutive_frames=cfg.transition_consecutive_frames,
         ),
         score_cfg=ScoreConfig(
-            enabled=cfg.score_enabled,
+            enabled=False,
             calibration_path=cfg.score_calibration_path,
             templates_dir=cfg.score_templates_dir,
             match_threshold=cfg.score_match_threshold,

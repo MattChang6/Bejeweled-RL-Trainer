@@ -26,7 +26,10 @@
     "score_capture_interval": 0.1,
     "score_reward_scale": 0.02,
     "score_max_wait_seconds": 10.0,
-    "score_debug_print": false
+    "score_debug_print": false,
+    "play_swap_delay": 0.05,
+    "play_settle_delay": 0.14,
+    "play_rescan_candidates": false
   },
   "dqn_config": {
     "lr": 0.001,
@@ -47,6 +50,6 @@
     "model_out": "models/bejeweled_dqn_UPDATE.pt",
     "checkpoint_out": "C:/Users/Matt/Desktop/USV Files/USV 2026 Spring/IND401/Bejeweled-RL-Trainer/models/bejeweled_dqn_UPDATE_checkpoint.pt",
     "classifier_path": "models/gem_classifier.pt",
-    "warm_start_model": "C:/Users/Matt/Desktop/USV Files/USV 2026 Spring/IND401/Bejeweled-RL-Trainer/models/bejeweled_dqn_part10.pt"
+    "warm_start_model": ""
   }
 }

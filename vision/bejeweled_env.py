@@ -52,6 +52,9 @@ class BejeweledEnv:
         classifier_device: str = "cpu",
         swap_delay: float = 0.1,
         settle_delay: float = 0.6,
+        candidate_rescan_enabled: bool = True,
+        candidate_rescan_samples: int = 3,
+        candidate_rescan_frame_delay: float = 0.03,
         reward_cfg: RewardConfig = RewardConfig(),
         transition_cfg: TransitionConfig = TransitionConfig(),
         score_cfg: ScoreConfig = ScoreConfig(),
@@ -60,6 +63,9 @@ class BejeweledEnv:
         self.calibration_path = calibration_path
         self.swap_delay = swap_delay
         self.settle_delay = settle_delay
+        self.candidate_rescan_enabled = candidate_rescan_enabled
+        self.candidate_rescan_samples = max(1, int(candidate_rescan_samples))
+        self.candidate_rescan_frame_delay = max(0.0, float(candidate_rescan_frame_delay))
         self.reward_cfg = reward_cfg
         self.transition_cfg = transition_cfg
         self.score_cfg = score_cfg
@@ -373,9 +379,11 @@ class BejeweledEnv:
         candidates = [action for action in self.valid_actions if self._action_can_score(board, action)]
         return np.array(candidates, dtype=np.int64)
 
-    def _consensus_candidate_board(self, samples: int = 3, frame_delay: float = 0.03) -> Optional[np.ndarray]:
+    def _consensus_candidate_board(self) -> Optional[np.ndarray]:
         boards = []
         confidences = []
+        samples = self.candidate_rescan_samples
+        frame_delay = self.candidate_rescan_frame_delay
 
         for i in range(samples):
             board = self.vision.board_state(reinit=(i == 0))
@@ -408,8 +416,10 @@ class BejeweledEnv:
             return self.valid_actions
 
         candidates = self._candidate_actions_for_board(board)
-        if len(candidates) > 4:
-            return candidates
+        if len(candidates) > 4 or not self.candidate_rescan_enabled:
+            if len(candidates) > 0:
+                return candidates
+            return self.valid_actions
 
         consensus_board = self._consensus_candidate_board()
         if consensus_board is not None:

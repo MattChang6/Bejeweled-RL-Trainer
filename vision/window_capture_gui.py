@@ -79,7 +79,7 @@ class RewardChartWidget(QWidget):
 class OptionsDialog(QDialog):
     def __init__(self, cfg: TrainingConfig, dqn_cfg: DQNConfig, reward_cfg: RewardConfig, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Training Options")
+        self.setWindowTitle("Session Options")
         self.cfg = cfg
         self.dqn_cfg = dqn_cfg
         self.reward_cfg = reward_cfg
@@ -87,7 +87,7 @@ class OptionsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         note = QLabel(
-            "Training always uses score-based rewards. Reward comes from the scoreboard change after each move."
+            "Training uses score-based rewards. Play mode ignores the scoreboard and can use a faster timing profile."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -225,6 +225,29 @@ class OptionsDialog(QDialog):
         self.score_debug_print.setToolTip("Print each OCR score read to the console for debugging.")
         form.addRow("", self.score_debug_print)
 
+        self.play_swap_delay = QDoubleSpinBox()
+        self.play_swap_delay.setRange(0.0, 1.0)
+        self.play_swap_delay.setDecimals(3)
+        self.play_swap_delay.setSingleStep(0.01)
+        self.play_swap_delay.setValue(cfg.play_swap_delay)
+        self.play_swap_delay.setToolTip("Delay between the two clicks used for a swap in play mode. Lower is faster but more error-prone.")
+        form.addRow("Play Swap Delay (s)", self.play_swap_delay)
+
+        self.play_settle_delay = QDoubleSpinBox()
+        self.play_settle_delay.setRange(0.0, 2.0)
+        self.play_settle_delay.setDecimals(3)
+        self.play_settle_delay.setSingleStep(0.01)
+        self.play_settle_delay.setValue(cfg.play_settle_delay)
+        self.play_settle_delay.setToolTip("How long play mode waits after a swap before reading the board again. Lower is faster but can catch animations mid-move.")
+        form.addRow("Play Settle Delay (s)", self.play_settle_delay)
+
+        self.play_rescan_candidates = QCheckBox("Play low-move rescan")
+        self.play_rescan_candidates.setChecked(cfg.play_rescan_candidates)
+        self.play_rescan_candidates.setToolTip(
+            "When enabled, play mode takes extra board reads when only a few moves are detected. More accurate, but slower."
+        )
+        form.addRow("", self.play_rescan_candidates)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -247,6 +270,9 @@ class OptionsDialog(QDialog):
             score_reward_scale=self.score_reward_scale.value(),
             score_match_threshold=self.score_match_threshold.value(),
             score_debug_print=self.score_debug_print.isChecked(),
+            play_swap_delay=self.play_swap_delay.value(),
+            play_settle_delay=self.play_settle_delay.value(),
+            play_rescan_candidates=self.play_rescan_candidates.isChecked(),
         )
         dqn_cfg = replace(
             self.dqn_cfg,
