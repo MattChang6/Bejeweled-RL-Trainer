@@ -27,6 +27,11 @@ class TransitionConfig:
     confidence_threshold: float = 0.58
     motion_threshold: float = 0.11
     consecutive_frames: int = 4
+    close_button_enabled: bool = True
+    close_button_path: str = "close_button/close_button.PNG"
+    close_button_threshold: float = 0.88
+    close_button_max_clicks: int = 2
+    close_button_post_click_delay: float = 0.35
 
 
 @dataclass
@@ -86,6 +91,8 @@ class BejeweledEnv:
         self.prev_gray = None
         self.transition_streak = 0
         self.transition_until = 0.0
+        self.transition_resume_check_pending = False
+        self.transition_close_button_template = self._load_transition_close_button_template()
 
         self.score_calibration: Optional[ScoreCalibration] = None
         self.score_reader: Optional[ScoreReader] = None
@@ -108,6 +115,7 @@ class BejeweledEnv:
         self.prev_gray = None
         self.transition_streak = 0
         self.transition_until = 0.0
+        self.transition_resume_check_pending = False
         self.last_score = self._wait_stable_score() if self.score_cfg.enabled else None
         return self._obs_from_board(self.last_board)
 
@@ -119,9 +127,19 @@ class BejeweledEnv:
             remaining = max(0.0, self.transition_until - time.time())
             return obs, 0.0, False, {"transition": True, "skip_replay": True, "transition_remaining_sec": remaining}
 
+        if self._transition_resume_check_due():
+            info: Dict[str, Any] = {"transition": True, "skip_replay": True, "transition_resumed": True}
+            if self._try_click_transition_close_button():
+                info["transition_close_clicked"] = True
+            board = self._resume_after_transition_pause()
+            self.last_board = board
+            obs = self._obs_from_board(board)
+            return obs, 0.0, False, info
+
         if self._transition_detected():
             self.transition_streak = 0
             self.transition_until = time.time() + self.transition_cfg.pause_seconds
+            self.transition_resume_check_pending = True
             board = self.vision.board_state()
             self.last_board = board
             obs = self._obs_from_board(board)
@@ -143,6 +161,7 @@ class BejeweledEnv:
         if self._transition_detected():
             self.transition_streak = 0
             self.transition_until = time.time() + self.transition_cfg.pause_seconds
+            self.transition_resume_check_pending = True
             self.last_board = new_board
             obs = self._obs_from_board(new_board)
             return obs, 0.0, False, {"transition": True, "skip_replay": True, "transition_triggered": True}
@@ -275,6 +294,16 @@ class BejeweledEnv:
     def _transition_active(self) -> bool:
         return self.transition_cfg.enabled and time.time() < self.transition_until
 
+    def _transition_resume_check_due(self) -> bool:
+        return self.transition_cfg.enabled and self.transition_resume_check_pending and time.time() >= self.transition_until
+
+    def _resume_after_transition_pause(self) -> np.ndarray:
+        self.transition_resume_check_pending = False
+        self.transition_until = 0.0
+        self.transition_streak = 0
+        self.prev_gray = None
+        return self.vision.board_state(reinit=True)
+
     def _transition_detected(self) -> bool:
         if not self.transition_cfg.enabled:
             return False
@@ -310,6 +339,70 @@ class BejeweledEnv:
             self.transition_streak = 0
 
         return self.transition_streak >= self.transition_cfg.consecutive_frames
+
+    def _load_transition_close_button_template(self) -> Optional[np.ndarray]:
+        if not self.transition_cfg.close_button_enabled:
+            return None
+
+        template_path = self.transition_cfg.close_button_path
+        if not template_path:
+            return None
+
+        candidates = []
+        if os.path.isabs(template_path):
+            candidates.append(template_path)
+        else:
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            candidates.append(os.path.join(repo_root, template_path))
+            candidates.append(os.path.abspath(template_path))
+
+        for candidate in candidates:
+            if not os.path.exists(candidate):
+                continue
+            template = cv.imread(candidate, cv.IMREAD_UNCHANGED)
+            if template is None:
+                continue
+            if len(template.shape) == 3 and template.shape[2] == 4:
+                template = cv.cvtColor(template, cv.COLOR_BGRA2BGR)
+            return np.ascontiguousarray(template)
+
+        return None
+
+    def _find_transition_close_button(self, screenshot: np.ndarray) -> Optional[Tuple[int, int]]:
+        template = self.transition_close_button_template
+        if template is None:
+            return None
+
+        if screenshot.shape[0] < template.shape[0] or screenshot.shape[1] < template.shape[1]:
+            return None
+
+        result = cv.matchTemplate(screenshot, template, cv.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv.minMaxLoc(result)
+        if max_val < self.transition_cfg.close_button_threshold:
+            return None
+
+        x = int(max_loc[0] + template.shape[1] / 2)
+        y = int(max_loc[1] + template.shape[0] / 2)
+        return x, y
+
+    def _try_click_transition_close_button(self) -> bool:
+        if not self.transition_cfg.close_button_enabled:
+            return False
+
+        clicked = False
+        max_clicks = max(1, int(self.transition_cfg.close_button_max_clicks))
+        for _ in range(max_clicks):
+            screenshot = self.vision.wincap.get_screenshot()
+            center = self._find_transition_close_button(screenshot)
+            if center is None:
+                break
+
+            screen_x, screen_y = self.vision.wincap.get_screen_position(center)
+            pyautogui.click(x=screen_x, y=screen_y)
+            clicked = True
+            time.sleep(self.transition_cfg.close_button_post_click_delay)
+
+        return clicked
 
     def _perform_swap(self, r1: int, c1: int, r2: int, c2: int) -> None:
         x1, y1 = self.vision.cell_center_screen(r1, c1)
