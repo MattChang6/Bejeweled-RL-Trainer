@@ -3,7 +3,7 @@
     "window_title": "Bejeweled 3",
     "episodes": 100,
     "max_steps": 200,
-    "model_out": "models/bejeweled_dqn_UPDATE.pt",
+    "model_out": "models/bejeweled_dqn_UPDATE1.pt",
     "device": "cpu",
     "reward_log_path": "training_rewards.csv",
     "plot_path": "training_rewards.png",
@@ -27,28 +27,28 @@
     "score_reward_scale": 0.02,
     "score_max_wait_seconds": 10.0,
     "score_debug_print": false,
-    "play_swap_delay": 0.05,
-    "play_settle_delay": 0.14,
+    "play_swap_delay": 0.3,
+    "play_settle_delay": 0.15,
     "play_rescan_candidates": false
   },
   "dqn_config": {
-    "lr": 0.001,
-    "gamma": 0.99,
+    "lr": 0.003,
+    "gamma": 0.9,
     "batch_size": 64,
     "target_update": 500,
-    "replay_size": 10000,
-    "min_replay": 500
+    "replay_size": 50000,
+    "min_replay": 5000
   },
   "reward_config": {
     "match_reward": 1.0,
     "invalid_penalty": 0.5,
-    "step_penalty": 0.0,
+    "step_penalty": 0.005,
     "speed_target_sec": 1.5,
     "speed_bonus_max": 0.5
   },
   "paths": {
-    "model_out": "models/bejeweled_dqn_UPDATE.pt",
-    "checkpoint_out": "C:/Users/Matt/Desktop/USV Files/USV 2026 Spring/IND401/Bejeweled-RL-Trainer/models/bejeweled_dqn_UPDATE_checkpoint.pt",
+    "model_out": "models/bejeweled_dqn_UPDATE1.pt",
+    "checkpoint_out": "C:/Users/Matt/Desktop/USV Files/USV 2026 Spring/IND401/Bejeweled-RL-Trainer/models/bejeweled_dqn_UPDATE1_checkpoint.pt",
     "classifier_path": "models/gem_classifier.pt",
     "warm_start_model": ""
   }
