@@ -450,12 +450,20 @@ def play_session(
     if cfg.poll_hotkeys:
         get_async_key_state = ctypes.windll.user32.GetAsyncKeyState
 
+    blocked_actions_by_board: Dict[bytes, set[int]] = {}
+    max_blocked_boards = 128
+    invalid_streak = 0
+    base_play_settle_delay = cfg.play_settle_delay
+    base_play_rescan = cfg.play_rescan_candidates
+
     reward_history = []
     total_steps = 0
     for ep in range(1, cfg.episodes + 1):
         if control and control.stopped():
             break
         state = env.reset()
+        blocked_actions_by_board.clear()
+        invalid_streak = 0
         ep_reward = 0.0
         step = 0
         attempts = 0
@@ -478,13 +486,30 @@ def play_session(
                     control.request_pause()
                 time.sleep(0.2)
 
+            env.settle_delay = base_play_settle_delay
+            env.candidate_rescan_enabled = base_play_rescan
+            if invalid_streak >= 2:
+                env.settle_delay = max(base_play_settle_delay, 0.25)
+                env.candidate_rescan_enabled = True
+
+            board_key = state.tobytes()
+            candidate_actions = env.current_candidate_actions()
+            blocked_actions = blocked_actions_by_board.get(board_key, set())
+            if blocked_actions:
+                filtered_actions = np.array(
+                    [action for action in candidate_actions if int(action) not in blocked_actions],
+                    dtype=np.int64,
+                )
+                if len(filtered_actions) > 0:
+                    candidate_actions = filtered_actions
+
             action = select_action(
                 q_net,
                 state,
                 epsilon=0.0,
                 n_actions=env.action_count,
                 device=cfg.device,
-                valid_actions=env.current_candidate_actions(),
+                valid_actions=candidate_actions,
             )
             next_state, reward, done, info = env.step(action)
             state = next_state
@@ -493,8 +518,26 @@ def play_session(
                 step += 1
                 ep_reward += reward
                 total_steps += 1
+
+                invalid_move = bool(info.get("invalid") or info.get("invalid_action"))
+                same_board = board_key == next_state.tobytes()
+                if invalid_move or same_board:
+                    invalid_streak += 1
+                    blocked = blocked_actions_by_board.setdefault(board_key, set())
+                    blocked.add(int(action))
+                    if len(blocked_actions_by_board) > max_blocked_boards:
+                        blocked_actions_by_board.pop(next(iter(blocked_actions_by_board)))
+                    info["play_loop_guard"] = True
+                    info["play_invalid_streak"] = invalid_streak
+                    info["play_blocked_count"] = len(blocked)
+                else:
+                    invalid_streak = 0
+                    blocked_actions_by_board.pop(board_key, None)
             else:
                 time.sleep(0.05)
+
+            if cfg.log_steps:
+                print(f"play ep={ep} step={step} reward={reward:.3f} total={ep_reward:.3f} info={info}")
 
             if progress_cb:
                 progress_cb(

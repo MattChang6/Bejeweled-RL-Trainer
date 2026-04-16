@@ -1,8 +1,8 @@
 {
-  "board_left": 334,
-  "board_top": 49,
-  "board_right": 989,
-  "board_bottom": 702,
+  "board_left": 331,
+  "board_top": 47,
+  "board_right": 987,
+  "board_bottom": 703,
   "grid_size": 8,
   "colors": 7
 }
